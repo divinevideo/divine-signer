@@ -41,7 +41,12 @@ export class BunkerNIP44Signer implements NostrSigner {
     return new BunkerNIP44Signer(inner, overrideType ?? 'bunker');
   }
 
-  /** Reconnect to a bunker using a stored client key and bunker URL (session restore). */
+  /** Reconnect to a bunker using a stored client key and bunker URL (session restore).
+   *
+   * Unlike fromBunkerUrl(), this does NOT send a `connect` RPC — the session
+   * already exists on the remote signer. It sets up the relay subscription
+   * and sends a `ping` to verify the channel is alive.
+   */
   static async reconnect(
     clientSecretKey: Uint8Array,
     bunkerUrl: string,
@@ -52,11 +57,14 @@ export class BunkerNIP44Signer implements NostrSigner {
     if (!bp) {
       throw new Error(`Invalid bunker URL: ${bunkerUrl}`);
     }
+    // fromBunker sets up the relay subscription without sending any RPC
     const inner = BunkerSigner.fromBunker(clientSecretKey, bp, params);
+    // Ping to verify the channel is alive instead of connect() which
+    // sends a new secret that remote signers like Primal reject
     await Promise.race([
-      inner.connect(),
+      inner.ping(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Bunker connection timed out')), connectTimeout),
+        setTimeout(() => reject(new Error('Bunker reconnection timed out')), connectTimeout),
       ),
     ]);
     return new BunkerNIP44Signer(inner, 'nostrconnect');
