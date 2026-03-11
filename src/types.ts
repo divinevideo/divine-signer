@@ -1,6 +1,6 @@
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools/pure';
 
-export type SignerType = 'nsec' | 'extension' | 'bunker' | 'nostrconnect' | 'keycast';
+export type SignerType = 'nsec' | 'extension' | 'bunker' | 'nostrconnect' | 'oauth';
 
 export interface NostrSigner {
   type: SignerType;

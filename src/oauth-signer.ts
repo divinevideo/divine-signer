@@ -2,13 +2,13 @@ import { verifyEvent } from 'nostr-tools/pure';
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools/pure';
 import type { NostrSigner, SignerType } from './types';
 
-export const DEFAULT_KEYCAST_API = 'https://login.divine.video';
+export const DEFAULT_OAUTH_API = 'https://login.divine.video';
 
-export class KeycastAuthError extends Error {
+export class OAuthError extends Error {
   readonly status: number;
   constructor(status: number) {
-    super(`Keycast auth failed: HTTP ${status}`);
-    this.name = 'KeycastAuthError';
+    super(`OAuth signer auth failed: HTTP ${status}`);
+    this.name = 'OAuthError';
     this.status = status;
   }
 }
@@ -18,8 +18,8 @@ export interface TokenRefreshResult {
   refreshToken: string;
 }
 
-export class KeycastHttpSigner implements NostrSigner {
-  readonly type: SignerType = 'keycast';
+export class OAuthSigner implements NostrSigner {
+  readonly type: SignerType = 'oauth';
   private token: string;
   private refreshToken: string | null;
   private readonly clientId: string;
@@ -38,7 +38,7 @@ export class KeycastHttpSigner implements NostrSigner {
     this.token = token;
     this.refreshToken = options?.refreshToken ?? null;
     this.clientId = options?.clientId ?? 'privdm';
-    this.apiUrl = options?.apiUrl ?? DEFAULT_KEYCAST_API;
+    this.apiUrl = options?.apiUrl ?? DEFAULT_OAUTH_API;
     this.fetchImpl = options?.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   }
 
@@ -56,7 +56,7 @@ export class KeycastHttpSigner implements NostrSigner {
       await this.refreshPromise;
       return true;
     } catch (e) {
-      console.warn('[keycast] Token refresh failed:', e);
+      console.warn('[oauth-signer] Token refresh failed:', e);
       return false;
     } finally {
       this.refreshPromise = null;
@@ -77,7 +77,7 @@ export class KeycastHttpSigner implements NostrSigner {
 
     if (!res.ok) {
       this.refreshToken = null;
-      throw new KeycastAuthError(res.status);
+      throw new OAuthError(res.status);
     }
 
     const data = (await res.json()) as {
@@ -114,7 +114,7 @@ export class KeycastHttpSigner implements NostrSigner {
         const retryAfter = res.headers.get('Retry-After');
         const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 1000 * 2 ** attempt;
         console.warn(
-          `[keycast] Rate limited on ${method}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})` +
+          `[oauth-signer] Rate limited on ${method}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})` +
           (retryAfter ? `, Retry-After: ${retryAfter}s` : ''),
         );
         await new Promise((r) => setTimeout(r, delay));
@@ -124,19 +124,19 @@ export class KeycastHttpSigner implements NostrSigner {
       if ((res.status === 401 || res.status === 403) && attempt === 0) {
         const refreshed = await this.tryRefreshToken();
         if (refreshed) continue;
-        throw new KeycastAuthError(res.status);
+        throw new OAuthError(res.status);
       }
 
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
-          throw new KeycastAuthError(res.status);
+          throw new OAuthError(res.status);
         }
-        throw new Error(`Keycast RPC failed: HTTP ${res.status}`);
+        throw new Error(`OAuth signer RPC failed: HTTP ${res.status}`);
       }
 
       const data = (await res.json()) as { result?: unknown; error?: string };
       if (data.error) {
-        throw new Error(`Keycast RPC error: ${data.error}`);
+        throw new Error(`OAuth signer RPC error: ${data.error}`);
       }
 
       return data.result;
@@ -159,7 +159,7 @@ export class KeycastHttpSigner implements NostrSigner {
     const signed: VerifiedEvent =
       typeof result === 'string' ? JSON.parse(result) : (result as VerifiedEvent);
     if (!verifyEvent(signed)) {
-      throw new Error('Keycast returned an invalid signed event');
+      throw new Error('OAuth signer returned an invalid signed event');
     }
     return signed;
   }

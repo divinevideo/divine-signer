@@ -1,4 +1,4 @@
-import { KeycastHttpSigner } from './keycast-http-signer';
+import { OAuthSigner } from './oauth-signer';
 import type { NostrSigner } from './types';
 
 export interface OAuthStorage {
@@ -139,7 +139,7 @@ export async function exchangeCode(
   }
 
   return {
-    signer: new KeycastHttpSigner(data.access_token, {
+    signer: new OAuthSigner(data.access_token, {
       refreshToken: data.refresh_token,
       clientId: config.clientId,
       apiUrl,

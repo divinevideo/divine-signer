@@ -1,6 +1,6 @@
 import { generateSecretKey, finalizeEvent } from 'nostr-tools/pure';
 import type { EventTemplate } from 'nostr-tools/pure';
-import { KeycastHttpSigner, KeycastAuthError } from '../keycast-http-signer';
+import { OAuthSigner, OAuthError } from '../oauth-signer';
 
 function mockFetchOk(result: unknown) {
   return vi.fn().mockResolvedValue({
@@ -25,14 +25,14 @@ function mockFetchHttpError(status: number, headers?: Record<string, string>) {
   });
 }
 
-describe('KeycastHttpSigner', () => {
+describe('OAuthSigner', () => {
   const token = 'test-jwt-token';
-  const apiUrl = 'https://keycast.test';
+  const apiUrl = 'https://oauth.test';
 
   describe('getPublicKey', () => {
     it('returns hex pubkey from RPC', async () => {
       const fetchImpl = mockFetchOk('aabbccdd');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const pubkey = await signer.getPublicKey();
 
@@ -50,7 +50,7 @@ describe('KeycastHttpSigner', () => {
 
     it('caches pubkey after first call', async () => {
       const fetchImpl = mockFetchOk('aabbccdd');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       await signer.getPublicKey();
       await signer.getPublicKey();
@@ -72,7 +72,7 @@ describe('KeycastHttpSigner', () => {
       const fetchImpl = vi.fn()
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: pubkey }) })
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: serverResponse }) });
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const result = await signer.signEvent(template);
       expect(result.id).toBe(signed.id);
@@ -97,7 +97,7 @@ describe('KeycastHttpSigner', () => {
       const fetchImpl = vi.fn()
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: pubkey }) })
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: { id, pubkey, sig, kind, content, tags, created_at } }) });
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const result = await signer.signEvent(template);
       expect(result.id).toBe(signed.id);
@@ -113,7 +113,7 @@ describe('KeycastHttpSigner', () => {
       const fetchImpl = vi.fn()
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: pubkey }) })
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: serverResponse }) });
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       // Pre-cache the pubkey
       await signer.getPublicKey();
@@ -137,18 +137,18 @@ describe('KeycastHttpSigner', () => {
       const fetchImpl = vi.fn()
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: 'b'.repeat(64) }) })
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: JSON.stringify(invalidEvent) }) });
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       await expect(
         signer.signEvent({ kind: 1, content: '', tags: [], created_at: 1000 }),
-      ).rejects.toThrow('Keycast returned an invalid signed event');
+      ).rejects.toThrow('OAuth signer returned an invalid signed event');
     });
   });
 
   describe('nip04Encrypt', () => {
     it('sends pubkey and plaintext, returns ciphertext', async () => {
       const fetchImpl = mockFetchOk('nip04-encrypted');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const result = await signer.nip04Encrypt('recipient-pk', 'secret');
 
@@ -162,7 +162,7 @@ describe('KeycastHttpSigner', () => {
   describe('nip04Decrypt', () => {
     it('sends pubkey and ciphertext, returns plaintext', async () => {
       const fetchImpl = mockFetchOk('nip04-decrypted');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const result = await signer.nip04Decrypt('sender-pk', 'cipher');
 
@@ -176,7 +176,7 @@ describe('KeycastHttpSigner', () => {
   describe('nip44Encrypt', () => {
     it('sends pubkey and plaintext, returns ciphertext', async () => {
       const fetchImpl = mockFetchOk('encrypted-payload');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const result = await signer.nip44Encrypt('recipient-pk', 'secret message');
 
@@ -190,7 +190,7 @@ describe('KeycastHttpSigner', () => {
   describe('nip44Decrypt', () => {
     it('sends pubkey and ciphertext, returns plaintext', async () => {
       const fetchImpl = mockFetchOk('decrypted message');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const result = await signer.nip44Decrypt('sender-pk', 'cipher-text');
 
@@ -202,35 +202,35 @@ describe('KeycastHttpSigner', () => {
   });
 
   describe('error handling', () => {
-    it('throws KeycastAuthError on 401', async () => {
+    it('throws OAuthError on 401', async () => {
       const fetchImpl = mockFetchHttpError(401);
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
-      await expect(signer.getPublicKey()).rejects.toThrow(KeycastAuthError);
-      await expect(signer.getPublicKey()).rejects.toThrow('Keycast auth failed: HTTP 401');
+      await expect(signer.getPublicKey()).rejects.toThrow(OAuthError);
+      await expect(signer.getPublicKey()).rejects.toThrow('OAuth signer auth failed: HTTP 401');
     });
 
-    it('throws KeycastAuthError on 403', async () => {
+    it('throws OAuthError on 403', async () => {
       const fetchImpl = mockFetchHttpError(403);
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       const err = await signer.getPublicKey().catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(KeycastAuthError);
-      expect((err as KeycastAuthError).status).toBe(403);
+      expect(err).toBeInstanceOf(OAuthError);
+      expect((err as OAuthError).status).toBe(403);
     });
 
     it('throws generic error on other HTTP errors', async () => {
       const fetchImpl = mockFetchHttpError(500);
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
-      await expect(signer.getPublicKey()).rejects.toThrow('Keycast RPC failed: HTTP 500');
+      await expect(signer.getPublicKey()).rejects.toThrow('OAuth signer RPC failed: HTTP 500');
     });
 
     it('throws on RPC error in response', async () => {
       const fetchImpl = mockFetchRpcError('unauthorized');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
-      await expect(signer.getPublicKey()).rejects.toThrow('Keycast RPC error: unauthorized');
+      await expect(signer.getPublicKey()).rejects.toThrow('OAuth signer RPC error: unauthorized');
     });
 
     it('retries on 429 and succeeds', async () => {
@@ -239,7 +239,7 @@ describe('KeycastHttpSigner', () => {
         const fetchImpl = vi.fn()
           .mockResolvedValueOnce({ ok: false, status: 429, headers: new Headers() })
           .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: 'pk123' }) });
-        const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+        const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
         const promise = signer.getPublicKey();
         await vi.runAllTimersAsync();
@@ -257,7 +257,7 @@ describe('KeycastHttpSigner', () => {
         const fetchImpl = vi.fn()
           .mockResolvedValueOnce({ ok: false, status: 429, headers: new Headers({ 'Retry-After': '2' }) })
           .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: 'pk456' }) });
-        const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+        const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
         const promise = signer.getPublicKey();
         await vi.advanceTimersByTimeAsync(2000);
@@ -272,7 +272,7 @@ describe('KeycastHttpSigner', () => {
       vi.useFakeTimers();
       try {
         const fetchImpl = mockFetchHttpError(429);
-        const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+        const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
         let caughtError: unknown;
         const promise = signer.getPublicKey().catch((e) => { caughtError = e; });
@@ -281,7 +281,7 @@ describe('KeycastHttpSigner', () => {
         await promise;
 
         expect(caughtError).toBeInstanceOf(Error);
-        expect((caughtError as Error).message).toBe('Keycast RPC failed: HTTP 429');
+        expect((caughtError as Error).message).toBe('OAuth signer RPC failed: HTTP 429');
         // 1 initial + 3 retries = 4 calls
         expect(fetchImpl).toHaveBeenCalledTimes(4);
       } finally {
@@ -290,7 +290,7 @@ describe('KeycastHttpSigner', () => {
     });
     it('passes 30s timeout signal to fetch', async () => {
       const fetchImpl = mockFetchOk('pk');
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
       await signer.getPublicKey();
 
@@ -313,7 +313,7 @@ describe('KeycastHttpSigner', () => {
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: 'mypubkey' }) });
 
       const onRefresh = vi.fn();
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl, refreshToken: 'old-refresh' });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl, refreshToken: 'old-refresh' });
       signer.onTokenRefresh = onRefresh;
 
       const pubkey = await signer.getPublicKey();
@@ -323,28 +323,28 @@ describe('KeycastHttpSigner', () => {
       expect(onRefresh).toHaveBeenCalledWith({ accessToken: 'new-token', refreshToken: 'new-refresh' });
     });
 
-    it('throws KeycastAuthError on 401 when no refresh token', async () => {
+    it('throws OAuthError on 401 when no refresh token', async () => {
       const fetchImpl = mockFetchHttpError(401);
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl });
 
-      await expect(signer.getPublicKey()).rejects.toThrow(KeycastAuthError);
+      await expect(signer.getPublicKey()).rejects.toThrow(OAuthError);
     });
 
-    it('throws KeycastAuthError when refresh token exchange fails', async () => {
+    it('throws OAuthError when refresh token exchange fails', async () => {
       const fetchImpl = vi.fn()
         .mockResolvedValueOnce({ ok: false, status: 401, headers: new Headers() })
         .mockResolvedValueOnce({ ok: false, status: 400, headers: new Headers() });
 
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl, refreshToken: 'bad-refresh' });
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl, refreshToken: 'bad-refresh' });
 
-      await expect(signer.getPublicKey()).rejects.toThrow(KeycastAuthError);
+      await expect(signer.getPublicKey()).rejects.toThrow(OAuthError);
     });
   });
 
   describe('defaults', () => {
     it('uses default API URL when not provided', async () => {
       const fetchImpl = mockFetchOk('pk');
-      const signer = new KeycastHttpSigner(token, { fetchImpl });
+      const signer = new OAuthSigner(token, { fetchImpl });
 
       await signer.getPublicKey();
 
@@ -352,9 +352,9 @@ describe('KeycastHttpSigner', () => {
       expect(url).toBe('https://login.divine.video/api/nostr');
     });
 
-    it('has type keycast', () => {
-      const signer = new KeycastHttpSigner(token, { apiUrl, fetchImpl: mockFetchOk('') });
-      expect(signer.type).toBe('keycast');
+    it('has type oauth', () => {
+      const signer = new OAuthSigner(token, { apiUrl, fetchImpl: mockFetchOk('') });
+      expect(signer.type).toBe('oauth');
     });
   });
 });

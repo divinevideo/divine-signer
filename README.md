@@ -10,7 +10,7 @@ A headless Nostr signer library that gives web apps five authentication paths th
 | **NIP-07 extension** | `ExtensionSigner` | Delegates to browser extensions (Alby, nos2x, Soapbox Signer). Keys never leave the extension. |
 | **NIP-46 bunker** | `BunkerNIP44Signer` | Connects to a remote signer via `bunker://` URL over WebSocket relays. |
 | **NIP-46 nostrconnect** | `BunkerNIP44Signer` | QR code flow — user scans with a mobile signer app (Amber, Primal, nsec.app). |
-| **diVine OAuth** | `KeycastHttpSigner` | Email/password login via [diVine](https://divine.video). Signs over HTTP with PKCE, token refresh, and rate-limit retry. |
+| **OAuth** | `OAuthSigner` | OAuth login (e.g. [diVine](https://divine.video)). Signs over HTTP with PKCE, token refresh, and rate-limit retry. |
 
 All five implement `NostrSigner`:
 
@@ -111,7 +111,7 @@ const { signer, accessToken, refreshToken } = await exchangeCode(
   params.get('state')!,
   oauthConfig,
 );
-// signer is a KeycastHttpSigner — use it like any other NostrSigner
+// signer is a OAuthSigner — use it like any other NostrSigner
 ```
 
 ### Session persistence
@@ -125,7 +125,7 @@ import { createSessionStore, restoreSession } from 'divine-signer';
 const sessions = createSessionStore(localStorage, 'my_app');
 
 // After login, save the session
-sessions.save({ type: 'keycast', accessToken, refreshToken });
+sessions.save({ type: 'oauth', accessToken, refreshToken });
 // or: sessions.save({ type: 'extension' });
 // or: sessions.save({ type: 'bunker', bunkerUrl: '...' });
 // or: sessions.save({ type: 'nsec', nsec: '...' });
@@ -138,16 +138,16 @@ if (stored) {
 }
 ```
 
-### Token refresh (Keycast)
+### Token refresh (OAuth)
 
-The `KeycastHttpSigner` handles token refresh automatically. Hook into it to persist new tokens:
+The `OAuthSigner` handles token refresh automatically. Hook into it to persist new tokens:
 
 ```typescript
-import { KeycastHttpSigner } from 'divine-signer';
+import { OAuthSigner } from 'divine-signer';
 
-if (signer instanceof KeycastHttpSigner) {
+if (signer instanceof OAuthSigner) {
   signer.onTokenRefresh = ({ accessToken, refreshToken }) => {
-    sessions.save({ type: 'keycast', accessToken, refreshToken });
+    sessions.save({ type: 'oauth', accessToken, refreshToken });
   };
 }
 ```
@@ -161,8 +161,8 @@ if (signer instanceof KeycastHttpSigner) {
 - `BunkerNIP44Signer.fromBunkerUrl(input, params?, overrideType?, timeout?)` — connect via bunker URL
 - `BunkerNIP44Signer.reconnect(clientSecretKey, bunkerUrl, params?, timeout?)` — restore a bunker session
 - `BunkerNIP44Signer.fromNostrConnect(uri, clientSecretKey, params?, timeoutOrAbort?)` — QR code connect flow
-- `KeycastHttpSigner(token, options?)` — HTTP signing via Keycast API
-- `KeycastAuthError` — thrown on 401/403 (check `error.status`)
+- `OAuthSigner(token, options?)` — HTTP signing via OAuth API
+- `OAuthError` — thrown on 401/403 (check `error.status`)
 
 ### OAuth
 
@@ -177,7 +177,7 @@ if (signer instanceof KeycastHttpSigner) {
 ### Types
 
 - `NostrSigner` — the signer interface all methods implement
-- `SignerType` — `'nsec' | 'extension' | 'bunker' | 'nostrconnect' | 'keycast'`
+- `SignerType` — `'nsec' | 'extension' | 'bunker' | 'nostrconnect' | 'oauth'`
 - `StoredSession` — discriminated union of all persistable session shapes
 - `OAuthStorage` — interface for PKCE state persistence
 - `OAuthConfig` — `{ clientId, redirectUri, apiUrl?, scope?, storage, fetchImpl? }`

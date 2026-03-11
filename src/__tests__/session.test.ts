@@ -1,6 +1,6 @@
 import { createSessionStore, restoreSession } from '../session';
 import type { StoredSession, SessionStorage } from '../session';
-import { KeycastHttpSigner } from '../keycast-http-signer';
+import { OAuthSigner } from '../oauth-signer';
 import { ExtensionSigner } from '../extension-signer';
 import { BunkerNIP44Signer } from '../bunker-signer';
 import { NsecSigner } from '../nsec-signer';
@@ -26,9 +26,9 @@ describe('createSessionStore', () => {
   }
 
   describe('save / load', () => {
-    it('round-trips a keycast session', () => {
+    it('round-trips an oauth session', () => {
       const store = makeStore();
-      const session: StoredSession = { type: 'keycast', accessToken: 'tok-123' };
+      const session: StoredSession = { type: 'oauth', accessToken: 'tok-123' };
       store.save(session);
       expect(store.load()).toEqual(session);
     });
@@ -91,9 +91,9 @@ describe('createSessionStore', () => {
       expect(store.load()).toBeNull();
     });
 
-    it('returns null for keycast session missing accessToken', () => {
+    it('returns null for oauth session missing accessToken', () => {
       const storage = createMemoryStorage();
-      storage.setItem('test_session', JSON.stringify({ type: 'keycast' }));
+      storage.setItem('test_session', JSON.stringify({ type: 'oauth' }));
       const store = createSessionStore(storage, 'test');
       expect(store.load()).toBeNull();
     });
@@ -145,10 +145,10 @@ describe('createSessionStore', () => {
 });
 
 describe('restoreSession', () => {
-  it('creates KeycastHttpSigner for keycast session', async () => {
-    const signer = await restoreSession({ type: 'keycast', accessToken: 'tok-123' });
-    expect(signer).toBeInstanceOf(KeycastHttpSigner);
-    expect(signer.type).toBe('keycast');
+  it('creates OAuthSigner for oauth session', async () => {
+    const signer = await restoreSession({ type: 'oauth', accessToken: 'tok-123' });
+    expect(signer).toBeInstanceOf(OAuthSigner);
+    expect(signer.type).toBe('oauth');
   });
 
   it('creates ExtensionSigner for extension session', async () => {

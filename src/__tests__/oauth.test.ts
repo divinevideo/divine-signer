@@ -1,6 +1,6 @@
 import { exchangeCode, buildOAuthUrl } from '../oauth';
 import type { OAuthStorage, OAuthConfig } from '../oauth';
-import { KeycastHttpSigner } from '../keycast-http-signer';
+import { OAuthSigner } from '../oauth-signer';
 
 function createMockStorage(): OAuthStorage & { _pkce: Record<string, string>; _handle: string | null } {
   const store: Record<string, string> = {};
@@ -134,8 +134,8 @@ describe('exchangeCode', () => {
 
     const result = await exchangeCode('auth-code', 'nonce', config);
 
-    expect(result.signer).toBeInstanceOf(KeycastHttpSigner);
-    expect(result.signer.type).toBe('keycast');
+    expect(result.signer).toBeInstanceOf(OAuthSigner);
+    expect(result.signer.type).toBe('oauth');
     expect(result.accessToken).toBe('jwt-token-123');
 
     // Verify the token exchange request

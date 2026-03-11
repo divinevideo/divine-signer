@@ -1,12 +1,12 @@
 import { nip19 } from 'nostr-tools';
 import type { NostrSigner } from './types';
-import { KeycastHttpSigner } from './keycast-http-signer';
+import { OAuthSigner } from './oauth-signer';
 import { ExtensionSigner } from './extension-signer';
 import { BunkerNIP44Signer } from './bunker-signer';
 import { NsecSigner } from './nsec-signer';
 
 export type StoredSession =
-  | { type: 'keycast'; accessToken: string; refreshToken?: string }
+  | { type: 'oauth'; accessToken: string; refreshToken?: string }
   | { type: 'bunker'; bunkerUrl: string }
   | { type: 'nostrconnect'; clientNsec: string; bunkerUrl: string }
   | { type: 'extension' }
@@ -41,10 +41,10 @@ export function createSessionStore(storage: SessionStorage, prefix: string): Ses
         const obj = parsed as Record<string, unknown>;
 
         switch (obj.type) {
-          case 'keycast':
+          case 'oauth':
             if (typeof obj.accessToken === 'string') {
               return {
-                type: 'keycast',
+                type: 'oauth',
                 accessToken: obj.accessToken,
                 ...(typeof obj.refreshToken === 'string' ? { refreshToken: obj.refreshToken } : {}),
               };
@@ -83,8 +83,8 @@ export function createSessionStore(storage: SessionStorage, prefix: string): Ses
 
 export async function restoreSession(session: StoredSession): Promise<NostrSigner> {
   switch (session.type) {
-    case 'keycast':
-      return new KeycastHttpSigner(session.accessToken, {
+    case 'oauth':
+      return new OAuthSigner(session.accessToken, {
         refreshToken: session.refreshToken,
       });
     case 'extension':
