@@ -27,15 +27,15 @@ describe('BunkerNIP44Signer.reconnect', () => {
     );
   });
 
-  it('calls ping instead of connect on the inner signer', async () => {
-    const mockPing = vi.fn().mockResolvedValue('pong');
+  it('calls getPublicKey instead of connect on the inner signer', async () => {
+    const mockGetPublicKey = vi.fn().mockResolvedValue('a'.repeat(64));
     const mockConnect = vi.fn().mockResolvedValue(undefined);
 
     // Mock nostr-tools/nip46 so fromBunker returns our mock signer
     const nip46 = await import('nostr-tools/nip46');
     const originalFromBunker = nip46.BunkerSigner.fromBunker;
     nip46.BunkerSigner.fromBunker = vi.fn().mockReturnValue({
-      ping: mockPing,
+      getPublicKey: mockGetPublicKey,
       connect: mockConnect,
       bp: { pubkey: 'a'.repeat(64), relays: ['wss://relay.test'], secret: '' },
     }) as typeof nip46.BunkerSigner.fromBunker;
@@ -45,7 +45,7 @@ describe('BunkerNIP44Signer.reconnect', () => {
       const bunkerUrl = `bunker://${'a'.repeat(64)}?relay=wss://relay.test`;
       const signer = await BunkerNIP44Signer.reconnect(sk, bunkerUrl);
 
-      expect(mockPing).toHaveBeenCalledTimes(1);
+      expect(mockGetPublicKey).toHaveBeenCalledTimes(1);
       expect(mockConnect).not.toHaveBeenCalled();
       expect(signer.type).toBe('nostrconnect');
     } finally {

@@ -45,7 +45,7 @@ export class BunkerNIP44Signer implements NostrSigner {
    *
    * Unlike fromBunkerUrl(), this does NOT send a `connect` RPC — the session
    * already exists on the remote signer. It sets up the relay subscription
-   * and sends a `ping` to verify the channel is alive.
+   * and calls getPublicKey() to verify the channel is alive (and prime the cache).
    */
   static async reconnect(
     clientSecretKey: Uint8Array,
@@ -59,10 +59,12 @@ export class BunkerNIP44Signer implements NostrSigner {
     }
     // fromBunker sets up the relay subscription without sending any RPC
     const inner = BunkerSigner.fromBunker(clientSecretKey, bp, params);
-    // Ping to verify the channel is alive instead of connect() which
-    // sends a new secret that remote signers like Primal reject
+    // Use getPublicKey() to verify the channel is alive — it's a mandatory
+    // NIP-46 method (unlike ping which some signers don't implement) and
+    // primes the pubkey cache. Avoids connect() which sends a new secret
+    // that remote signers like Primal reject.
     await Promise.race([
-      inner.ping(),
+      inner.getPublicKey(),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Bunker reconnection timed out')), connectTimeout),
       ),
