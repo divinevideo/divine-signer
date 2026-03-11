@@ -31,7 +31,15 @@ Your app codes against this interface. The user's choice of auth method is invis
 ## Install
 
 ```bash
-npm install github:divinevideo/divine-signer
+npm install divine-signer
+```
+
+Or via CDN (no bundler needed):
+
+```html
+<script type="module">
+  import { ExtensionSigner, buildOAuthUrl } from "https://esm.sh/divine-signer";
+</script>
 ```
 
 Requires `nostr-tools ^2.23.0` as a peer dependency.
@@ -186,4 +194,4 @@ if (signer instanceof KeycastHttpSigner) {
 
 ## License
 
-MIT
+[MPL-2.0](LICENSE)

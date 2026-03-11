@@ -2,19 +2,40 @@
   "name": "divine-signer",
   "version": "0.1.0",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
-    "src",
-    "package.json",
-    "tsconfig.json"
+    "dist",
+    "package.json"
   ],
   "scripts": {
+    "build": "rm -rf dist && esbuild src/index.ts --bundle --format=esm --outfile=dist/index.js --external:nostr-tools --platform=browser --target=es2020 && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
+  "description": "Headless Nostr signer — five auth methods, one interface",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/divinevideo/divine-signer.git"
+  },
+  "keywords": [
+    "nostr",
+    "signer",
+    "nip-07",
+    "nip-46",
+    "bunker",
+    "keycast",
+    "oauth"
+  ],
   "peerDependencies": {
     "nostr-tools": "^2.23.0"
   },
