@@ -1,0 +1,28 @@
+{
+  "name": "divine-signer",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "package.json",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "nostr-tools": "^2.23.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "jsdom": "^25.0.1",
+    "nostr-tools": "^2.23.0",
+    "typescript": "~5.6.2",
+    "vitest": "^2.1.8"
+  }
+}
