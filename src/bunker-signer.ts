@@ -138,7 +138,7 @@ export class BunkerNIP44Signer implements NostrSigner {
 
       const sub = pool.subscribe(
         relays,
-        { kinds: [24133], '#p': [clientPubkey], limit: 0 },
+        { kinds: [24133], '#p': [clientPubkey] },
         {
           onevent: async (event) => {
             try {
@@ -154,15 +154,10 @@ export class BunkerNIP44Signer implements NostrSigner {
               // Not our event or decryption failed — ignore
             }
           },
-          onclose: () => {
-            if (!settled) {
-              reject(
-                new Error(
-                  'Subscription closed before connection was established',
-                ),
-              );
-            }
-          },
+          // Don't reject on relay-level close — a single relay closing
+          // (e.g. Primal not supporting kind 24133 queries) must not
+          // kill the whole flow. The abort/timeout handler covers the
+          // case where no relay delivers the ack.
           abort: effectiveAbort,
         },
       );
