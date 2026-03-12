@@ -8,6 +8,7 @@ export type { TokenRefreshResult } from './oauth-signer';
 export { NsecSigner } from './nsec-signer';
 export { ExtensionSigner } from './extension-signer';
 export { BunkerNIP44Signer } from './bunker-signer';
+export type { NostrConnectHandle } from './bunker-signer';
 export { OAuthSigner, OAuthError } from './oauth-signer';
 
 // Session

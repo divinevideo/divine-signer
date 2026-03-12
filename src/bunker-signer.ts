@@ -10,6 +10,13 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools/pure';
 import type { NostrSigner, SignerType } from './types';
 
+export interface NostrConnectHandle {
+  /** Call after showing the QR code. Resolves when the remote signer acks. */
+  waitForSigner(): Promise<BunkerNIP44Signer>;
+  /** Abort the connection attempt. */
+  abort(): void;
+}
+
 export class BunkerNIP44Signer implements NostrSigner {
   readonly type: SignerType;
   private readonly inner: BunkerSigner;
@@ -73,20 +80,17 @@ export class BunkerNIP44Signer implements NostrSigner {
   }
 
   /**
-   * Connect via a nostrconnect:// URI (QR code flow).
+   * Two-phase nostrconnect: sets up relay connections and subscription,
+   * then returns a handle. Show the QR code, then call handle.waitForSigner().
    *
-   * Implements the connect handshake manually instead of using
-   * BunkerSigner.fromURI, which sends a `switch_relays` RPC that
-   * signers like Primal don't understand (causing a parse error and
-   * potentially disrupting the session). After the handshake we create
-   * the signer via BunkerSigner.fromBunker which skips switch_relays.
+   * This avoids a race where the user scans before the subscription is live.
    */
-  static async fromNostrConnect(
+  static async prepareNostrConnect(
     connectionURI: string,
     clientSecretKey: Uint8Array,
     params?: BunkerSignerParams,
     timeoutOrAbort?: number | AbortSignal,
-  ): Promise<BunkerNIP44Signer> {
+  ): Promise<NostrConnectHandle> {
     const uri = new URL(connectionURI);
     const relays = uri.searchParams.getAll('relay');
     const secret = uri.searchParams.get('secret');
@@ -101,16 +105,21 @@ export class BunkerNIP44Signer implements NostrSigner {
         ? AbortSignal.timeout(timeoutOrAbort)
         : timeoutOrAbort;
 
+    const ac = new AbortController();
+    const effectiveAbort = abort ?? ac.signal;
+
     const pool = new SimplePool();
 
-    // Wait for the remote signer's connect ack (response containing our secret).
-    const signerPubkey = await new Promise<string>((resolve, reject) => {
-      if (abort?.aborted) {
+    // Connect to all relays before subscribing
+    await Promise.all(relays.map((r) => pool.ensureRelay(r)));
+
+    // Set up subscription immediately — it's live now
+    let settled = false;
+    const signerPromise = new Promise<string>((resolve, reject) => {
+      if (effectiveAbort.aborted) {
         reject(new Error('Aborted'));
         return;
       }
-
-      let settled = false;
 
       const sub = pool.subscribe(
         relays,
@@ -139,11 +148,11 @@ export class BunkerNIP44Signer implements NostrSigner {
               );
             }
           },
-          abort,
+          abort: effectiveAbort,
         },
       );
 
-      abort?.addEventListener(
+      effectiveAbort.addEventListener(
         'abort',
         () => {
           if (!settled) {
@@ -156,14 +165,43 @@ export class BunkerNIP44Signer implements NostrSigner {
       );
     });
 
-    // Create signer via fromBunker — sets up subscription without
-    // sending switch_relays, reusing the pool's relay connections.
-    const bp = { pubkey: signerPubkey, relays, secret: secret || '' };
-    const inner = BunkerSigner.fromBunker(clientSecretKey, bp, {
-      ...params,
-      pool,
-    });
-    return new BunkerNIP44Signer(inner, 'nostrconnect');
+    return {
+      async waitForSigner(): Promise<BunkerNIP44Signer> {
+        const signerPubkey = await signerPromise;
+        const bp = { pubkey: signerPubkey, relays, secret: secret || '' };
+        const inner = BunkerSigner.fromBunker(clientSecretKey, bp, {
+          ...params,
+          pool,
+        });
+        return new BunkerNIP44Signer(inner, 'nostrconnect');
+      },
+      abort(): void {
+        ac.abort();
+      },
+    };
+  }
+
+  /**
+   * Connect via a nostrconnect:// URI (QR code flow).
+   *
+   * Convenience wrapper around prepareNostrConnect() — connects to relays,
+   * subscribes, and waits for the ack in one call. If you need to show a
+   * QR code only after the subscription is live, use prepareNostrConnect()
+   * instead.
+   */
+  static async fromNostrConnect(
+    connectionURI: string,
+    clientSecretKey: Uint8Array,
+    params?: BunkerSignerParams,
+    timeoutOrAbort?: number | AbortSignal,
+  ): Promise<BunkerNIP44Signer> {
+    const handle = await BunkerNIP44Signer.prepareNostrConnect(
+      connectionURI,
+      clientSecretKey,
+      params,
+      timeoutOrAbort,
+    );
+    return handle.waitForSigner();
   }
 
   async getPublicKey(): Promise<string> {
