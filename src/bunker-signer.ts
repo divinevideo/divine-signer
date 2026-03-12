@@ -110,8 +110,23 @@ export class BunkerNIP44Signer implements NostrSigner {
 
     const pool = new SimplePool();
 
-    // Connect to all relays before subscribing
-    await Promise.all(relays.map((r) => pool.ensureRelay(r)));
+    // Connect to relays with a per-relay timeout. Proceed as soon as at
+    // least one connects — slow/dead relays will catch up in the background
+    // and the subscription covers all of them.
+    const RELAY_CONNECT_TIMEOUT = 5_000;
+    const results = await Promise.allSettled(
+      relays.map((r) =>
+        Promise.race([
+          pool.ensureRelay(r),
+          new Promise<never>((_, rej) =>
+            setTimeout(() => rej(new Error(`Relay ${r} connect timeout`)), RELAY_CONNECT_TIMEOUT),
+          ),
+        ]),
+      ),
+    );
+    if (results.every((r) => r.status === 'rejected')) {
+      throw new Error('Failed to connect to any relay');
+    }
 
     // Set up subscription immediately — it's live now
     let settled = false;
