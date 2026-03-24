@@ -1,6 +1,6 @@
 {
-  "name": "divine-signer",
-  "version": "0.4.2",
+  "name": "@divinevideo/signer",
+  "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,7 +15,7 @@
     "package.json"
   ],
   "scripts": {
-    "build": "rm -rf dist && esbuild src/index.ts --bundle --format=esm --outfile=dist/index.js --external:nostr-tools --platform=browser --target=es2020 && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && esbuild src/index.ts --bundle --format=esm --outfile=dist/index.js --external:nostr-tools --external:@divinevideo/login --platform=browser --target=es2020 && tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -37,9 +37,11 @@
     "oauth"
   ],
   "peerDependencies": {
-    "nostr-tools": "^2.23.0"
+    "nostr-tools": "^2.23.0",
+    "@divinevideo/login": "^1.1.0"
   },
   "devDependencies": {
+    "@divinevideo/login": "^1.1.0",
     "esbuild": "^0.27.3",
     "jsdom": "^25.0.1",
     "nostr-tools": "^2.23.0",

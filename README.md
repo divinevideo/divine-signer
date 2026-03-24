@@ -1,6 +1,8 @@
-# divine-signer
+# @divinevideo/signer
 
 A headless Nostr signer library that gives web apps five authentication paths through one interface. No UI, no framework lock-in — just a `NostrSigner` interface your app programs against while users pick how they want to sign.
+
+> **Note:** This package was previously published as `divine-signer`. Use `@divinevideo/signer` for new installs.
 
 ## Auth methods
 
@@ -31,25 +33,17 @@ Your app codes against this interface. The user's choice of auth method is invis
 ## Install
 
 ```bash
-npm install divine-signer
+npm install @divinevideo/signer
 ```
 
-Or via CDN (no bundler needed):
-
-```html
-<script type="module">
-  import { ExtensionSigner, buildOAuthUrl } from "https://esm.sh/divine-signer";
-</script>
-```
-
-Requires `nostr-tools ^2.23.0` as a peer dependency.
+Requires `nostr-tools ^2.23.0` and `@divinevideo/login ^1.1.0` as peer dependencies.
 
 ## Quick start
 
 ### Direct signer usage
 
 ```typescript
-import { NsecSigner, ExtensionSigner, BunkerNIP44Signer } from 'divine-signer';
+import { NsecSigner, ExtensionSigner, BunkerNIP44Signer } from '@divinevideo/signer';
 
 // nsec
 const signer = new NsecSigner('nsec1...');
@@ -68,50 +62,34 @@ const encrypted = await signer.nip44Encrypt(recipientPubkey, 'secret');
 
 ### OAuth flow (diVine)
 
-OAuth requires two steps: redirect out, then handle the callback.
-
-First, define your storage adapter (tells the library where to persist PKCE state):
+OAuth uses `DivineOAuth` from `@divinevideo/login` (re-exported here for convenience):
 
 ```typescript
-import type { OAuthStorage, OAuthConfig } from 'divine-signer';
+import { DivineOAuth, OAuthSigner } from '@divinevideo/signer';
+import type { DivineStorage } from '@divinevideo/signer';
 
-const oauthStorage: OAuthStorage = {
-  savePkceState: (s) => localStorage.setItem('my_oauth', JSON.stringify(s)),
-  loadPkceState: () => { try { return JSON.parse(localStorage.getItem('my_oauth')!); } catch { return null; } },
-  clearPkceState: () => localStorage.removeItem('my_oauth'),
-  saveAuthorizationHandle: (h) => localStorage.setItem('my_auth_handle', h),
-  loadAuthorizationHandle: () => localStorage.getItem('my_auth_handle'),
-  clearAuthorizationHandle: () => localStorage.removeItem('my_auth_handle'),
+const storage: DivineStorage = {
+  get: (key) => localStorage.getItem(key),
+  set: (key, value) => localStorage.setItem(key, value),
+  remove: (key) => localStorage.removeItem(key),
 };
 
-const oauthConfig: OAuthConfig = {
+const oauth = new DivineOAuth({
   clientId: 'my-app',
   redirectUri: `${window.location.origin}/auth/callback`,
-  storage: oauthStorage,
-};
-```
+  storage,
+});
 
-Start the flow (login page):
+// Start the flow
+const url = oauth.buildAuthorizeUrl();
+window.location.href = url;
 
-```typescript
-import { buildOAuthUrl } from 'divine-signer';
-
-const url = await buildOAuthUrl(oauthConfig);
-window.location.href = url; // redirect to diVine
-```
-
-Handle the callback (`/auth/callback` route):
-
-```typescript
-import { exchangeCode } from 'divine-signer';
-
+// Handle the callback
 const params = new URLSearchParams(window.location.search);
-const { signer, accessToken, refreshToken } = await exchangeCode(
-  params.get('code')!,
-  params.get('state')!,
-  oauthConfig,
-);
-// signer is a OAuthSigner — use it like any other NostrSigner
+const tokens = await oauth.exchangeCode(params.get('code')!, params.get('state')!);
+const signer = new OAuthSigner(tokens.access_token, {
+  refreshToken: tokens.refresh_token,
+});
 ```
 
 ### Session persistence
@@ -119,7 +97,7 @@ const { signer, accessToken, refreshToken } = await exchangeCode(
 Save and restore sessions across page reloads:
 
 ```typescript
-import { createSessionStore, restoreSession } from 'divine-signer';
+import { createSessionStore, restoreSession } from '@divinevideo/signer';
 
 // Create a store backed by localStorage (or any storage with getItem/setItem/removeItem)
 const sessions = createSessionStore(localStorage, 'my_app');
@@ -143,7 +121,7 @@ if (stored) {
 The `OAuthSigner` handles token refresh automatically. Hook into it to persist new tokens:
 
 ```typescript
-import { OAuthSigner } from 'divine-signer';
+import { OAuthSigner } from '@divinevideo/signer';
 
 if (signer instanceof OAuthSigner) {
   signer.onTokenRefresh = ({ accessToken, refreshToken }) => {
@@ -164,10 +142,11 @@ if (signer instanceof OAuthSigner) {
 - `OAuthSigner(token, options?)` — HTTP signing via OAuth API
 - `OAuthError` — thrown on 401/403 (check `error.status`)
 
-### OAuth
+### OAuth (re-exported from @divinevideo/login)
 
-- `buildOAuthUrl(config, options?)` — returns authorize URL string (caller navigates)
-- `exchangeCode(code, state, config)` — exchanges auth code for `OAuthResult { signer, accessToken, refreshToken? }`
+- `DivineOAuth` — OAuth flow manager (PKCE, authorize URL, code exchange)
+- `createDivineClient(config)` — factory for `DivineRpc` client
+- `generatePkce()` — generate PKCE code verifier + challenge
 
 ### Session
 
@@ -179,8 +158,11 @@ if (signer instanceof OAuthSigner) {
 - `NostrSigner` — the signer interface all methods implement
 - `SignerType` — `'nsec' | 'extension' | 'bunker' | 'nostrconnect' | 'oauth'`
 - `StoredSession` — discriminated union of all persistable session shapes
-- `OAuthStorage` — interface for PKCE state persistence
-- `OAuthConfig` — `{ clientId, redirectUri, apiUrl?, scope?, storage, fetchImpl? }`
+- `DivineClientConfig` — config for `createDivineClient`
+- `DivineStorage` — interface for OAuth state persistence
+- `PkceChallenge` — PKCE code verifier + challenge pair
+- `TokenResponse` — token exchange response
+- `StoredCredentials` — persisted OAuth credentials
 - `TokenRefreshResult` — `{ accessToken, refreshToken }`
 
 ## Example

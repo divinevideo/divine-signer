@@ -1,7 +1,6 @@
 // Types
 export type { NostrSigner, SignerType } from './types';
 export type { StoredSession, SessionStore, SessionStorage } from './session';
-export type { OAuthStorage, OAuthConfig, OAuthResult } from './oauth';
 export type { TokenRefreshResult } from './oauth-signer';
 
 // Signers
@@ -14,5 +13,18 @@ export { OAuthSigner, OAuthError } from './oauth-signer';
 // Session
 export { createSessionStore, restoreSession } from './session';
 
-// OAuth
-export { buildOAuthUrl, exchangeCode } from './oauth';
+// OAuth (re-exported from @divinevideo/login)
+export {
+  DivineOAuth,
+  createDivineClient,
+  generatePkce,
+} from './oauth';
+
+export type {
+  DivineClientConfig,
+  DivineStorage,
+  OAuthResult,
+  PkceChallenge,
+  TokenResponse,
+  StoredCredentials,
+} from './oauth';
