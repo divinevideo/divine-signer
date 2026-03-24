@@ -1,6 +1,6 @@
 {
-  "name": "divine-signer",
-  "version": "0.4.2",
+  "name": "@divinevideo/signer",
+  "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -38,7 +38,7 @@
   ],
   "peerDependencies": {
     "nostr-tools": "^2.23.0",
-    "@divinevideo/login": ">=1.1.0"
+    "@divinevideo/login": "^1.1.0"
   },
   "devDependencies": {
     "@divinevideo/login": "file:../divine-login",
