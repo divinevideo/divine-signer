@@ -1,38 +1,31 @@
 import {
-  NIP44Signer,
   NsecSigner,
   ExtensionSigner,
   BunkerNIP44Signer,
-  KeycastHttpSigner,
-  buildOAuthUrl,
-  exchangeCode,
+  OAuthSigner,
+  createDivineClient,
   createSessionStore,
   restoreSession,
-} from 'divine-signer';
-import type { OAuthConfig, OAuthStorage } from 'divine-signer';
+  installDivineEmbedBridge,
+} from '@divinevideo/signer';
+import type { NostrSigner } from '@divinevideo/signer';
 
-// ── Storage adapters ────────────────────────────────────────
+installDivineEmbedBridge();
 
-const oauthStorage: OAuthStorage = {
-  savePkceState: (s) => localStorage.setItem('example_oauth', JSON.stringify(s)),
-  loadPkceState: () => { try { return JSON.parse(localStorage.getItem('example_oauth')!); } catch { return null; } },
-  clearPkceState: () => localStorage.removeItem('example_oauth'),
-  saveAuthorizationHandle: (h) => localStorage.setItem('example_auth_handle', h),
-  loadAuthorizationHandle: () => localStorage.getItem('example_auth_handle'),
-  clearAuthorizationHandle: () => localStorage.removeItem('example_auth_handle'),
-};
-
-const oauthConfig: OAuthConfig = {
-  clientId: 'divine-signer-example',
+const oauthClientId = 'divine-signer-example';
+const oauthServerUrl = 'https://login.divine.video';
+const divine = createDivineClient({
+  serverUrl: oauthServerUrl,
+  clientId: oauthClientId,
   redirectUri: `${window.location.origin}${window.location.pathname}`,
-  storage: oauthStorage,
-};
+  storage: localStorage,
+});
 
 const sessions = createSessionStore(localStorage, 'example');
 
 // ── State ───────────────────────────────────────────────────
 
-let signer: NIP44Signer | null = null;
+let signer: NostrSigner | null = null;
 const app = document.getElementById('app')!;
 
 // ── Render ──────────────────────────────────────────────────
@@ -99,7 +92,7 @@ function renderLogin() {
   };
 
   document.getElementById('oauth-btn')!.onclick = async () => {
-    const url = await buildOAuthUrl(oauthConfig);
+    const { url } = await divine.oauth.getAuthorizationUrl();
     window.location.href = url;
   };
 }
@@ -146,12 +139,12 @@ function showStatus(msg: string) {
   if (el) el.textContent = msg;
 }
 
-async function onLogin(s: NIP44Signer) {
+async function onLogin(s: NostrSigner) {
   signer = s;
 
-  if (s instanceof KeycastHttpSigner) {
+  if (s instanceof OAuthSigner) {
     s.onTokenRefresh = ({ accessToken, refreshToken }) => {
-      sessions.save({ type: 'keycast', accessToken, refreshToken });
+      sessions.save({ type: 'oauth', accessToken, refreshToken });
     };
   }
 
@@ -169,13 +162,24 @@ async function boot() {
 
   if (code && state) {
     try {
-      const { signer: s, accessToken, refreshToken } = await exchangeCode(code, state, oauthConfig);
-      sessions.save({ type: 'keycast', accessToken, refreshToken });
+      const tokens = await divine.oauth.exchangeCode(code);
+      if (!tokens.access_token) {
+        throw new Error('OAuth response did not include an access token');
+      }
+      const s = new OAuthSigner(tokens.access_token, {
+        refreshToken: tokens.refresh_token,
+        clientId: oauthClientId,
+        apiUrl: oauthServerUrl,
+      });
+      sessions.save({
+        type: 'oauth',
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+      });
       window.history.replaceState({}, '', window.location.pathname);
       onLogin(s);
       return;
     } catch (e) {
-      oauthStorage.clearPkceState();
       window.history.replaceState({}, '', window.location.pathname);
       renderLogin();
       showStatus(`OAuth error: ${e}`);

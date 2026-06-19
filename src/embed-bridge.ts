@@ -2,8 +2,8 @@
 //
 // When a Divine first-party app (verifyer.divine.video, badges.divine.video,
 // etc.) is loaded inside an iframe of a trusted Divine origin, this module
-// installs a window.nostr (NIP-07) shim that proxies getPublicKey / signEvent
-// / getRelays calls to the parent frame over postMessage. Apps using
+// installs a window.nostr (NIP-07) shim that proxies getPublicKey, signEvent,
+// getRelays, nip04, and nip44 calls to the parent frame over postMessage. Apps using
 // ExtensionSigner from this package then transparently use the host's signer
 // without the user having to log in again inside the iframe.
 //
@@ -26,14 +26,21 @@ export const DEFAULT_ALLOWED_PARENT_HOSTS: readonly string[] = [
 
 export const DEFAULT_ALLOWED_PARENT_SUFFIXES: readonly string[] = [
   '.divine.video',
-  '.pages.dev',
+  '.divine-mobile.pages.dev',
 ];
 
 /** postMessage envelope sent from the iframe to the host. */
 export interface EmbedBridgeRequest {
   type: 'divine:nostr.request';
   id: number;
-  method: 'getPublicKey' | 'signEvent' | 'getRelays';
+  method:
+    | 'getPublicKey'
+    | 'signEvent'
+    | 'getRelays'
+    | 'nip04.encrypt'
+    | 'nip04.decrypt'
+    | 'nip44.encrypt'
+    | 'nip44.decrypt';
   params: Record<string, unknown>;
 }
 
@@ -53,8 +60,8 @@ export interface EmbedBridgeOptions {
   allowedHosts?: readonly string[];
   /**
    * Suffix-match parent hostname allowlist. Defaults to
-   * `['.divine.video', '.pages.dev']` so staging and Cloudflare Pages
-   * preview deploys are accepted.
+   * `['.divine.video', '.divine-mobile.pages.dev']` so staging and the Divine
+   * mobile Cloudflare Pages preview deploys are accepted.
    */
   allowedSuffixes?: readonly string[];
   /**
@@ -118,7 +125,11 @@ export function installDivineEmbedBridge(opts: EmbedBridgeOptions = {}): boolean
   let nextRequestId = 0;
   const pending = new Map<
     number,
-    { resolve: (value: unknown) => void; reject: (err: Error) => void }
+    {
+      resolve: (value: unknown) => void;
+      reject: (err: Error) => void;
+      timeoutId: ReturnType<typeof setTimeout>;
+    }
   >();
 
   window.addEventListener('message', (event: MessageEvent) => {
@@ -128,6 +139,7 @@ export function installDivineEmbedBridge(opts: EmbedBridgeOptions = {}): boolean
     const entry = pending.get(data.id);
     if (!entry) return;
     pending.delete(data.id);
+    clearTimeout(entry.timeoutId);
     if (data.error) entry.reject(new Error(String(data.error)));
     else entry.resolve(data.result);
   });
@@ -138,9 +150,16 @@ export function installDivineEmbedBridge(opts: EmbedBridgeOptions = {}): boolean
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const id = ++nextRequestId;
+      const timeoutId = setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id);
+          reject(new Error('divine.video parent did not respond'));
+        }
+      }, requestTimeoutMs);
       pending.set(id, {
         resolve: (value: unknown) => resolve(value as T),
         reject,
+        timeoutId,
       });
       const message: EmbedBridgeRequest = {
         type: 'divine:nostr.request',
@@ -149,12 +168,6 @@ export function installDivineEmbedBridge(opts: EmbedBridgeOptions = {}): boolean
         params: params ?? {},
       };
       window.parent.postMessage(message, parentOrigin!);
-      setTimeout(() => {
-        if (pending.has(id)) {
-          pending.delete(id);
-          reject(new Error('divine.video parent did not respond'));
-        }
-      }, requestTimeoutMs);
     });
   }
 
@@ -163,6 +176,18 @@ export function installDivineEmbedBridge(opts: EmbedBridgeOptions = {}): boolean
       getPublicKey: () => sendRequest<string>('getPublicKey'),
       signEvent: (event: unknown) => sendRequest<unknown>('signEvent', { event }),
       getRelays: () => sendRequest<unknown>('getRelays'),
+      nip04: {
+        encrypt: (pubkey: string, plaintext: string) =>
+          sendRequest<string>('nip04.encrypt', { pubkey, plaintext }),
+        decrypt: (pubkey: string, ciphertext: string) =>
+          sendRequest<string>('nip04.decrypt', { pubkey, ciphertext }),
+      },
+      nip44: {
+        encrypt: (pubkey: string, plaintext: string) =>
+          sendRequest<string>('nip44.encrypt', { pubkey, plaintext }),
+        decrypt: (pubkey: string, ciphertext: string) =>
+          sendRequest<string>('nip44.decrypt', { pubkey, ciphertext }),
+      },
     },
     configurable: true,
     writable: true,

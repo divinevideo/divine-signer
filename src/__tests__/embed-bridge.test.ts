@@ -20,6 +20,14 @@ interface FakeWindow {
     getPublicKey: () => Promise<string>;
     signEvent: (event: unknown) => Promise<unknown>;
     getRelays: () => Promise<unknown>;
+    nip04: {
+      encrypt: (pubkey: string, plaintext: string) => Promise<string>;
+      decrypt: (pubkey: string, ciphertext: string) => Promise<string>;
+    };
+    nip44: {
+      encrypt: (pubkey: string, plaintext: string) => Promise<string>;
+      decrypt: (pubkey: string, ciphertext: string) => Promise<string>;
+    };
   };
   __divineEmbedded?: boolean;
   __divineParentOrigin?: string;
@@ -122,6 +130,15 @@ describe('installDivineEmbedBridge', () => {
       expect(win.__divineParentOrigin).toBe('https://abcd1234.divine-mobile.pages.dev');
     });
 
+    it('does not install for unrelated Cloudflare Pages preview referrers', () => {
+      const win = setupSandbox({
+        framed: true,
+        referrer: 'https://unrelated.pages.dev/edit-profile',
+      });
+      expect(installDivineEmbedBridge()).toBe(false);
+      expect(win.nostr).toBeUndefined();
+    });
+
     it('installs for localhost referrer (dev)', () => {
       const win = setupSandbox({ framed: true, referrer: 'http://localhost:5173/edit-profile' });
       expect(installDivineEmbedBridge()).toBe(true);
@@ -196,6 +213,25 @@ describe('installDivineEmbedBridge', () => {
       await expect(promise).rejects.toThrow('user rejected');
     });
 
+    it('clears the request timeout when a response settles the request', async () => {
+      vi.useFakeTimers();
+      try {
+        const win = setupSandbox({ framed: true, referrer: 'https://divine.video/' });
+        installDivineEmbedBridge({ requestTimeoutMs: 100 });
+        const promise = win.nostr!.getPublicKey();
+        const id = (win.postedMessages[0].message as { id: number }).id;
+        expect(vi.getTimerCount()).toBe(1);
+        win.messageListener!({
+          origin: 'https://divine.video',
+          data: { type: 'divine:nostr.response', id, result: 'pubkey' },
+        } as unknown as MessageEvent);
+        await expect(promise).resolves.toBe('pubkey');
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('ignores responses from a different origin', async () => {
       vi.useFakeTimers();
       try {
@@ -262,6 +298,76 @@ describe('installDivineEmbedBridge', () => {
       await expect(pubkeyPromise).resolves.toBe('pubkey');
       await expect(signPromise).resolves.toEqual({ signed: true });
     });
+
+    it('nip04 encrypt and decrypt forward to the parent signer', async () => {
+      const win = setupInstalled();
+      const encryptPromise = win.nostr!.nip04.encrypt('pub123', 'hello');
+      const encryptRequest = win.postedMessages[0].message as {
+        method: string;
+        id: number;
+        params: unknown;
+      };
+      expect(encryptRequest).toMatchObject({
+        method: 'nip04.encrypt',
+        params: { pubkey: 'pub123', plaintext: 'hello' },
+      });
+      win.messageListener!({
+        origin: 'https://divine.video',
+        data: { type: 'divine:nostr.response', id: encryptRequest.id, result: 'encrypted' },
+      } as unknown as MessageEvent);
+      await expect(encryptPromise).resolves.toBe('encrypted');
+
+      const decryptPromise = win.nostr!.nip04.decrypt('pub123', 'encrypted');
+      const decryptRequest = win.postedMessages[1].message as {
+        method: string;
+        id: number;
+        params: unknown;
+      };
+      expect(decryptRequest).toMatchObject({
+        method: 'nip04.decrypt',
+        params: { pubkey: 'pub123', ciphertext: 'encrypted' },
+      });
+      win.messageListener!({
+        origin: 'https://divine.video',
+        data: { type: 'divine:nostr.response', id: decryptRequest.id, result: 'hello' },
+      } as unknown as MessageEvent);
+      await expect(decryptPromise).resolves.toBe('hello');
+    });
+
+    it('nip44 encrypt and decrypt forward to the parent signer', async () => {
+      const win = setupInstalled();
+      const encryptPromise = win.nostr!.nip44.encrypt('pub123', 'hello');
+      const encryptRequest = win.postedMessages[0].message as {
+        method: string;
+        id: number;
+        params: unknown;
+      };
+      expect(encryptRequest).toMatchObject({
+        method: 'nip44.encrypt',
+        params: { pubkey: 'pub123', plaintext: 'hello' },
+      });
+      win.messageListener!({
+        origin: 'https://divine.video',
+        data: { type: 'divine:nostr.response', id: encryptRequest.id, result: 'encrypted' },
+      } as unknown as MessageEvent);
+      await expect(encryptPromise).resolves.toBe('encrypted');
+
+      const decryptPromise = win.nostr!.nip44.decrypt('pub123', 'encrypted');
+      const decryptRequest = win.postedMessages[1].message as {
+        method: string;
+        id: number;
+        params: unknown;
+      };
+      expect(decryptRequest).toMatchObject({
+        method: 'nip44.decrypt',
+        params: { pubkey: 'pub123', ciphertext: 'encrypted' },
+      });
+      win.messageListener!({
+        origin: 'https://divine.video',
+        data: { type: 'divine:nostr.response', id: decryptRequest.id, result: 'hello' },
+      } as unknown as MessageEvent);
+      await expect(decryptPromise).resolves.toBe('hello');
+    });
   });
 
   describe('exports', () => {
@@ -270,7 +376,7 @@ describe('installDivineEmbedBridge', () => {
     });
     it('exposes the default suffix allowlist', () => {
       expect(DEFAULT_ALLOWED_PARENT_SUFFIXES).toContain('.divine.video');
-      expect(DEFAULT_ALLOWED_PARENT_SUFFIXES).toContain('.pages.dev');
+      expect(DEFAULT_ALLOWED_PARENT_SUFFIXES).toContain('.divine-mobile.pages.dev');
     });
   });
 
