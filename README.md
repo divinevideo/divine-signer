@@ -62,33 +62,33 @@ const encrypted = await signer.nip44Encrypt(recipientPubkey, 'secret');
 
 ### OAuth flow (diVine)
 
-OAuth uses `DivineOAuth` from `@divinevideo/login` (re-exported here for convenience):
+OAuth uses `createDivineClient` from `@divinevideo/login` (re-exported here for convenience):
 
 ```typescript
-import { DivineOAuth, OAuthSigner } from '@divinevideo/signer';
-import type { DivineStorage } from '@divinevideo/signer';
+import { OAuthSigner, createDivineClient } from '@divinevideo/signer';
 
-const storage: DivineStorage = {
-  get: (key) => localStorage.getItem(key),
-  set: (key, value) => localStorage.setItem(key, value),
-  remove: (key) => localStorage.removeItem(key),
-};
-
-const oauth = new DivineOAuth({
-  clientId: 'my-app',
+const clientId = 'my-app';
+const serverUrl = 'https://login.divine.video';
+const divine = createDivineClient({
+  serverUrl,
+  clientId,
   redirectUri: `${window.location.origin}/auth/callback`,
-  storage,
+  storage: localStorage,
 });
 
 // Start the flow
-const url = oauth.buildAuthorizeUrl();
+const { url } = await divine.oauth.getAuthorizationUrl();
 window.location.href = url;
 
 // Handle the callback
 const params = new URLSearchParams(window.location.search);
-const tokens = await oauth.exchangeCode(params.get('code')!, params.get('state')!);
+const tokens = await divine.oauth.exchangeCode(params.get('code')!);
+if (!tokens.access_token) throw new Error('OAuth response did not include an access token');
+
 const signer = new OAuthSigner(tokens.access_token, {
   refreshToken: tokens.refresh_token,
+  clientId,
+  apiUrl: serverUrl,
 });
 ```
 
@@ -130,6 +130,23 @@ if (signer instanceof OAuthSigner) {
 }
 ```
 
+### Embedded Divine apps
+
+First-party Divine apps embedded in a trusted `divine.video` host can install a NIP-07 shim that proxies `ExtensionSigner` calls to the parent frame. Call it once during app startup, before constructing an `ExtensionSigner`:
+
+```typescript
+import { ExtensionSigner, installDivineEmbedBridge } from '@divinevideo/signer';
+
+installDivineEmbedBridge();
+
+const signer = new ExtensionSigner();
+const pubkey = await signer.getPublicKey();
+const signed = await signer.signEvent({ kind: 1, content: 'hello', tags: [], created_at: now });
+const encrypted = await signer.nip44Encrypt(recipientPubkey, 'secret');
+```
+
+The bridge only installs for framed pages whose `document.referrer` host matches the default Divine allowlist, or a custom `allowedHosts` / `allowedSuffixes` override. The parent host must answer `divine:nostr.request` messages for `getPublicKey`, `signEvent`, `getRelays`, `nip04.encrypt`, `nip04.decrypt`, `nip44.encrypt`, and `nip44.decrypt`.
+
 ## API reference
 
 ### Signers
@@ -152,6 +169,13 @@ if (signer instanceof OAuthSigner) {
 
 - `createSessionStore(storage, prefix)` — returns `{ save, load, clear }`
 - `restoreSession(stored)` — reconstructs a `NostrSigner` from a `StoredSession`
+
+### Embed bridge
+
+- `installDivineEmbedBridge(options?)` — installs the framed-app `window.nostr` bridge when the parent origin is trusted
+- `isDivineEmbedded()` — returns whether the bridge installed in the current window
+- `getDivineParentOrigin()` — returns the trusted parent origin after install, otherwise `null`
+- `DEFAULT_ALLOWED_PARENT_HOSTS` / `DEFAULT_ALLOWED_PARENT_SUFFIXES` — default parent host allowlist values
 
 ### Types
 

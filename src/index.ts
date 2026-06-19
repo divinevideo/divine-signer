@@ -13,6 +13,22 @@ export { OAuthSigner, OAuthError } from './oauth-signer';
 // Session
 export { createSessionStore, restoreSession } from './session';
 
+// Embed bridge — let Divine integrated apps run inside divine.video iframes
+// using the host's signer over postMessage instead of asking the user to
+// sign in twice.
+export {
+  installDivineEmbedBridge,
+  isDivineEmbedded,
+  getDivineParentOrigin,
+  DEFAULT_ALLOWED_PARENT_HOSTS,
+  DEFAULT_ALLOWED_PARENT_SUFFIXES,
+} from './embed-bridge';
+export type {
+  EmbedBridgeOptions,
+  EmbedBridgeRequest,
+  EmbedBridgeResponse,
+} from './embed-bridge';
+
 // OAuth (re-exported from @divinevideo/login)
 export {
   DivineOAuth,
