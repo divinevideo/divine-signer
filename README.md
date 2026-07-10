@@ -12,7 +12,7 @@ A headless Nostr signer library that gives web apps five authentication paths th
 | **NIP-07 extension** | `ExtensionSigner` | Delegates to browser extensions (Alby, nos2x, Soapbox Signer). Keys never leave the extension. |
 | **NIP-46 bunker** | `BunkerNIP44Signer` | Connects to a remote signer via `bunker://` URL over WebSocket relays. |
 | **NIP-46 nostrconnect** | `BunkerNIP44Signer` | QR code flow — user scans with a mobile signer app (Amber, Primal, nsec.app). |
-| **OAuth** | `OAuthSigner` | OAuth login (e.g. [diVine](https://divine.video)). Signs over HTTP with PKCE, token refresh, and rate-limit retry. |
+| **OAuth** | `OAuthSigner` | OAuth login (e.g. [Divine](https://divine.video)). Signs over HTTP with PKCE, token refresh, and rate-limit retry. |
 
 All five implement `NostrSigner`:
 
@@ -60,7 +60,7 @@ const signed = await signer.signEvent({ kind: 1, content: 'hello', tags: [], cre
 const encrypted = await signer.nip44Encrypt(recipientPubkey, 'secret');
 ```
 
-### OAuth flow (diVine)
+### OAuth flow (Divine)
 
 OAuth uses `createDivineClient` from `@divinevideo/login` (re-exported here for convenience):
 
@@ -201,3 +201,7 @@ The bridge only installs for framed pages whose `document.referrer` host matches
 ## License
 
 [MPL-2.0](LICENSE)
+
+---
+
+Part of [Divine](https://divine.video) — your playground for human creativity · [Brand guidelines](https://github.com/divinevideo/brand-guidelines)
