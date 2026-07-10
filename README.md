@@ -1,10 +1,19 @@
-# @divinevideo/signer
+# Divine Signer
 
-A headless Nostr signer library that gives web apps five authentication paths through one interface. No UI, no framework lock-in — just a `NostrSigner` interface your app programs against while users pick how they want to sign.
+A headless Nostr signer library that gives web apps five authentication paths through one interface. Published as [`@divinevideo/signer`](https://www.npmjs.com/package/@divinevideo/signer). No UI, no framework lock-in — just a `NostrSigner` interface your app programs against while users pick how they want to sign.
 
 > **Note:** This package was previously published as `divine-signer`. Use `@divinevideo/signer` for new installs.
 
-## Auth methods
+## Features
+
+- **Five auth methods, one interface.** nsec paste, NIP-07 extension, NIP-46 bunker, NIP-46 nostrconnect (QR), and OAuth all implement the same `NostrSigner`.
+- **Signing and encryption.** Every signer exposes `getPublicKey`, `signEvent`, and both NIP-04 and NIP-44 encrypt/decrypt.
+- **Session persistence.** Save a login to any storage with `getItem`/`setItem`/`removeItem` and restore the signer on the next page load.
+- **Automatic OAuth token refresh.** `OAuthSigner` refreshes expired access tokens and hands you the new pair to persist.
+- **Embed bridge.** First-party Divine apps running inside a trusted `divine.video` iframe can reuse the host's signer over `postMessage` instead of asking users to sign in twice.
+- **Small and dependency-light.** Ships as ESM with `nostr-tools` and `@divinevideo/login` as peer dependencies.
+
+### Auth methods
 
 | Method | Class | How it works |
 |--------|-------|-------------|
@@ -12,9 +21,11 @@ A headless Nostr signer library that gives web apps five authentication paths th
 | **NIP-07 extension** | `ExtensionSigner` | Delegates to browser extensions (Alby, nos2x, Soapbox Signer). Keys never leave the extension. |
 | **NIP-46 bunker** | `BunkerNIP44Signer` | Connects to a remote signer via `bunker://` URL over WebSocket relays. |
 | **NIP-46 nostrconnect** | `BunkerNIP44Signer` | QR code flow — user scans with a mobile signer app (Amber, Primal, nsec.app). |
-| **OAuth** | `OAuthSigner` | OAuth login (e.g. [Divine](https://divine.video)). Signs over HTTP with PKCE, token refresh, and rate-limit retry. |
+| **OAuth** | `OAuthSigner` | OAuth login (e.g. [Divine](https://divine.video)). Signs over HTTP with token refresh and 401/403 handling. |
 
-All five implement `NostrSigner`:
+## Architecture
+
+Every signer implements one interface:
 
 ```typescript
 interface NostrSigner {
@@ -28,17 +39,22 @@ interface NostrSigner {
 }
 ```
 
-Your app codes against this interface. The user's choice of auth method is invisible to the rest of your stack.
+Your app codes against this interface. The user's choice of auth method is invisible to the rest of your stack. Under the hood each signer wraps a different backend:
 
-## Install
+- **`NsecSigner`** holds the secret key and signs/encrypts locally with `nostr-tools/pure`, `nip04`, and `nip44`.
+- **`ExtensionSigner`** proxies to `window.nostr` (NIP-07) and surfaces clear errors when an extension is absent or lacks NIP-04/NIP-44 support.
+- **`BunkerNIP44Signer`** wraps `nostr-tools`' NIP-46 `BunkerSigner`, adding connect/reconnect timeouts and a two-phase nostrconnect flow that only completes once the relay subscription is live (avoiding a scan-before-ready race).
+- **`OAuthSigner`** signs over HTTP through `DivineRpc` from `@divinevideo/login`, verifying every returned event and refreshing tokens on a 401.
+
+**Platform fit.** Divine's login stack is OAuth-first via `@divinevideo/login`, and Divine Signer re-exports that client so apps get a single dependency for the full picture: OAuth for Divine accounts, plus the four other Nostr-native paths for users who bring their own keys. The embed bridge lets first-party apps embedded in the Divine host (for example the Flutter web shell) share one signed-in session across iframes.
+
+## Getting started
 
 ```bash
 npm install @divinevideo/signer
 ```
 
 Requires `nostr-tools ^2.23.0` and `@divinevideo/login ^1.1.0` as peer dependencies.
-
-## Quick start
 
 ### Direct signer usage
 
@@ -58,6 +74,20 @@ const signer = await BunkerNIP44Signer.fromBunkerUrl('bunker://...');
 const pubkey = await signer.getPublicKey();
 const signed = await signer.signEvent({ kind: 1, content: 'hello', tags: [], created_at: now });
 const encrypted = await signer.nip44Encrypt(recipientPubkey, 'secret');
+```
+
+### nostrconnect (QR code)
+
+For the QR flow, prepare the connection first so the relay subscription is live before you show the code:
+
+```typescript
+import { BunkerNIP44Signer } from '@divinevideo/signer';
+import { generateSecretKey } from 'nostr-tools/pure';
+
+const clientKey = generateSecretKey();
+const handle = await BunkerNIP44Signer.prepareNostrConnect(nostrconnectUri, clientKey);
+// render the QR code now, then:
+const signer = await handle.waitForSigner();
 ```
 
 ### OAuth flow (Divine)
@@ -106,6 +136,7 @@ const sessions = createSessionStore(localStorage, 'my_app');
 sessions.save({ type: 'oauth', accessToken, refreshToken });
 // or: sessions.save({ type: 'extension' });
 // or: sessions.save({ type: 'bunker', bunkerUrl: '...' });
+// or: sessions.save({ type: 'nostrconnect', clientNsec: '...', bunkerUrl: '...' });
 // or: sessions.save({ type: 'nsec', nsec: '...' });
 
 // On page load, restore it
@@ -118,7 +149,7 @@ if (stored) {
 
 ### Token refresh (OAuth)
 
-The `OAuthSigner` handles token refresh automatically. Hook into it to persist new tokens:
+The `OAuthSigner` refreshes access tokens automatically when it has a refresh token. Hook into it to persist new tokens:
 
 ```typescript
 import { OAuthSigner } from '@divinevideo/signer';
@@ -145,7 +176,26 @@ const signed = await signer.signEvent({ kind: 1, content: 'hello', tags: [], cre
 const encrypted = await signer.nip44Encrypt(recipientPubkey, 'secret');
 ```
 
-The bridge only installs for framed pages whose `document.referrer` host matches the default Divine allowlist, or a custom `allowedHosts` / `allowedSuffixes` override. The parent host must answer `divine:nostr.request` messages for `getPublicKey`, `signEvent`, `getRelays`, `nip04.encrypt`, `nip04.decrypt`, `nip44.encrypt`, and `nip44.decrypt`.
+The bridge only installs for framed pages whose `document.referrer` host matches the Divine allowlist. The parent host must answer `divine:nostr.request` messages for `getPublicKey`, `signEvent`, `getRelays`, `nip04.encrypt`, `nip04.decrypt`, `nip44.encrypt`, and `nip44.decrypt`.
+
+## Configuration
+
+The library takes no environment variables — configuration is passed to the constructors and factories at call time.
+
+### `OAuthSigner`
+
+`new OAuthSigner(token, options?)` accepts:
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `refreshToken` | `undefined` | Enables automatic refresh on 401. Without it, expired tokens throw `OAuthError`. |
+| `clientId` | `'privdm'` | OAuth client id used on refresh requests. |
+| `apiUrl` | `https://login.divine.video` | Base URL for the Nostr signing and token endpoints. |
+| `fetchImpl` | `globalThis.fetch` | Inject a custom `fetch` (useful for tests). |
+
+### Embed bridge
+
+`installDivineEmbedBridge(options?)` accepts `allowedHosts`, `allowedSuffixes`, and `requestTimeoutMs`. The defaults trust `divine.video`, `app.divine.video`, `localhost`, and any `*.divine.video` or `*.divine-mobile.pages.dev` host, with a 60s request timeout. Override the allowlists to embed under a different trusted origin.
 
 ## API reference
 
@@ -153,16 +203,18 @@ The bridge only installs for framed pages whose `document.referrer` host matches
 
 - `NsecSigner(nsec: string)` — local signing from a secret key
 - `ExtensionSigner()` — delegates to `window.nostr` (NIP-07)
-- `BunkerNIP44Signer.fromBunkerUrl(input, params?, overrideType?, timeout?)` — connect via bunker URL
-- `BunkerNIP44Signer.reconnect(clientSecretKey, bunkerUrl, params?, timeout?)` — restore a bunker session
-- `BunkerNIP44Signer.fromNostrConnect(uri, clientSecretKey, params?, timeoutOrAbort?)` — QR code connect flow
+- `BunkerNIP44Signer.fromBunkerUrl(input, params?, overrideType?, connectTimeout?)` — connect via bunker URL or NIP-05 identifier
+- `BunkerNIP44Signer.reconnect(clientSecretKey, bunkerUrl, params?, connectTimeout?)` — restore a bunker session without re-sending `connect`
+- `BunkerNIP44Signer.prepareNostrConnect(uri, clientSecretKey, params?, timeoutOrAbort?)` — two-phase QR flow; returns a `NostrConnectHandle`
+- `BunkerNIP44Signer.fromNostrConnect(uri, clientSecretKey, params?, timeoutOrAbort?)` — one-call QR flow
+- Instance helpers: `getBunkerUrl()` returns the `bunker://` URL; `close()` tears down relay connections
 - `OAuthSigner(token, options?)` — HTTP signing via OAuth API
 - `OAuthError` — thrown on 401/403 (check `error.status`)
 
 ### OAuth (re-exported from @divinevideo/login)
 
 - `DivineOAuth` — OAuth flow manager (PKCE, authorize URL, code exchange)
-- `createDivineClient(config)` — factory for `DivineRpc` client
+- `createDivineClient(config)` — factory for the Divine RPC client
 - `generatePkce()` — generate PKCE code verifier + challenge
 
 ### Session
@@ -172,31 +224,37 @@ The bridge only installs for framed pages whose `document.referrer` host matches
 
 ### Embed bridge
 
-- `installDivineEmbedBridge(options?)` — installs the framed-app `window.nostr` bridge when the parent origin is trusted
-- `isDivineEmbedded()` — returns whether the bridge installed in the current window
-- `getDivineParentOrigin()` — returns the trusted parent origin after install, otherwise `null`
-- `DEFAULT_ALLOWED_PARENT_HOSTS` / `DEFAULT_ALLOWED_PARENT_SUFFIXES` — default parent host allowlist values
+- `installDivineEmbedBridge(options?)` — installs the framed-app `window.nostr` bridge when the parent origin is trusted; returns `true` when installed
+- `isDivineEmbedded()` — whether the bridge installed in the current window
+- `getDivineParentOrigin()` — the trusted parent origin after install, otherwise `null`
+- `DEFAULT_ALLOWED_PARENT_HOSTS` / `DEFAULT_ALLOWED_PARENT_SUFFIXES` — default parent host allowlists
 
 ### Types
 
 - `NostrSigner` — the signer interface all methods implement
 - `SignerType` — `'nsec' | 'extension' | 'bunker' | 'nostrconnect' | 'oauth'`
-- `StoredSession` — discriminated union of all persistable session shapes
-- `DivineClientConfig` — config for `createDivineClient`
-- `DivineStorage` — interface for OAuth state persistence
-- `PkceChallenge` — PKCE code verifier + challenge pair
-- `TokenResponse` — token exchange response
-- `StoredCredentials` — persisted OAuth credentials
+- `NostrConnectHandle` — `{ waitForSigner, abort }` returned by `prepareNostrConnect`
+- `StoredSession` / `SessionStore` / `SessionStorage` — session persistence shapes
 - `TokenRefreshResult` — `{ accessToken, refreshToken }`
+- `EmbedBridgeOptions` / `EmbedBridgeRequest` / `EmbedBridgeResponse` — embed bridge message contract
+- `DivineClientConfig`, `DivineStorage`, `OAuthResult`, `PkceChallenge`, `TokenResponse`, `StoredCredentials` — OAuth types
 
-## Example
+## Development
+
+```bash
+npm install        # install dependencies
+npm run build      # bundle the library (esbuild) and emit type declarations (tsc)
+npm run typecheck  # type-check without emitting
+npm test           # run the Vitest suite
+npm run test:watch # run tests in watch mode
+```
+
+The build bundles `src/index.ts` to ESM with `nostr-tools` and `@divinevideo/login` left external. `npm publish` runs the build automatically via `prepublishOnly`. If you change the public API or example flows, update the README and the example together.
+
+## Examples
 
 - [`examples/vanilla/`](examples/vanilla/) — minimal single-page app wiring all five auth methods, no framework, no CSS, just the API.
-- [privdm](https://github.com/dcadenas/privdm) — a full React app (NIP-17 encrypted DMs) using divine-signer in production.
-
-## Size
-
-~9KB minified / ~3.4KB gzipped (excluding the nostr-tools peer dependency).
+- [privdm](https://github.com/dcadenas/privdm) — a full React app (NIP-17 encrypted DMs) using this signer in production.
 
 ## License
 
